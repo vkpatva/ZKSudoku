@@ -1,0 +1,6 @@
+[package]
+name = "zksudoku"
+type = "bin"
+authors = [""]
+
+[dependencies]
