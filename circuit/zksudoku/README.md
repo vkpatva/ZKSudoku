@@ -21,8 +21,6 @@ bb prove -b ./target/zksudoku.json -w ./target/zksudoku.gz --write_vk -o target
 bb verify -p ./target/proof -k ./target/vk
 ```
 
-You get `target/proof` (combined) and `target/vk`. No copy step needed.
-
 ## Tests
 
 ```bash
