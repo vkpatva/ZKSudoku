@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "sync-circuit": "sh -c 'cp ../circuit/zksudoku/target/zksudoku.json src/circuits/zksudoku.json'",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

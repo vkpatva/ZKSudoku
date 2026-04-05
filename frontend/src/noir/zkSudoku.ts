@@ -6,7 +6,7 @@ import initACVM from '@noir-lang/acvm_js'
 import acvmWasmUrl from '@noir-lang/acvm_js/web/acvm_js_bg.wasm?url'
 import noircWasmUrl from '@noir-lang/noirc_abi/web/noirc_abi_wasm_bg.wasm?url'
 
-import circuitJson from '../../../circuit/zksudoku/target/zksudoku.json'
+import circuitJson from '../circuits/zksudoku.json'
 import type { Grid4x4 } from '../sudoku'
 
 const circuit = circuitJson as CompiledCircuit
