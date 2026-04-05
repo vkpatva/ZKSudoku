@@ -1,11 +1,15 @@
 import './App.css'
 import { useEffect, useMemo, useState } from 'react'
-import { cloneGrid, generate4x4Puzzle, normalizeGridFromJson, validate4x4Grid } from './sudoku'
-import type { Grid4x4 } from './sudoku'
+import { proveSudokuInBrowser } from './noir/zkSudoku'
+import { cloneGrid, generateDemoPuzzle, validate4x4Grid } from './sudoku'
+import type { DemoDifficulty, Grid4x4 } from './sudoku'
 
 type GameStatus = 'playing' | 'won' | 'invalid'
 
 const PUZZLE_DURATION_SECONDS = 600
+
+/** First puzzle when using the local generator (matches default difficulty control). */
+const INITIAL_DEMO_DIFFICULTY: DemoDifficulty = 'easy'
 
 function formatSeconds(total: number): string {
   const m = Math.floor(total / 60)
@@ -18,55 +22,28 @@ function App() {
   const [grid, setGrid] = useState<Grid4x4 | null>(null)
   const [status, setStatus] = useState<GameStatus>('playing')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [source, setSource] = useState<'api' | 'generated' | null>(null)
-  const [apiUrlInput, setApiUrlInput] = useState('')
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [timerRunning, setTimerRunning] = useState(false)
+  const [zkBusy, setZkBusy] = useState(false)
+  const [zkMessage, setZkMessage] = useState<string | null>(null)
+  const [zkError, setZkError] = useState<string | null>(null)
+  const [generatorDifficulty, setGeneratorDifficulty] = useState<DemoDifficulty>(INITIAL_DEMO_DIFFICULTY)
 
   useEffect(() => {
     let cancelled = false
 
     const bootstrap = async () => {
-      const search = new URLSearchParams(window.location.search)
-      const queryUrl = search.get('puzzleUrl') ?? search.get('puzzle_url')
-      const envUrl = (import.meta.env.VITE_PUZZLE_API_URL as string | undefined) ?? undefined
-      const url = queryUrl || envUrl
+      // Load puzzle from URL / API (disabled for demo UI — restore if needed):
+      // const search = new URLSearchParams(window.location.search)
+      // const queryUrl = search.get('puzzleUrl') ?? search.get('puzzle_url')
+      // const envUrl = (import.meta.env.VITE_PUZZLE_API_URL as string | undefined) ?? undefined
+      // const url = queryUrl || envUrl
+      // if (url) { ... fetch + normalizeGridFromJson ... }
 
-      if (url) {
-        try {
-          setLoading(true)
-          setError(null)
-          setStatus('playing')
-          const res = await fetch(url)
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`)
-          }
-          const json = await res.json()
-          const normalized = normalizeGridFromJson(json)
-          if (!normalized) {
-            throw new Error('Could not normalize puzzle JSON into a 9×9 grid')
-          }
-          if (cancelled) return
-          setInitialGrid(cloneGrid(normalized))
-          setGrid(cloneGrid(normalized))
-          setSource('api')
-          setRemainingSeconds(PUZZLE_DURATION_SECONDS)
-          setTimerRunning(true)
-          return
-        } catch (e) {
-          console.error('Failed to load puzzle from API, falling back to generator.', e)
-          if (!cancelled) {
-            setError('Failed to load puzzle from API; using local generator instead.')
-          }
-        }
-      }
-
-      const { puzzle } = generate4x4Puzzle()
+      const { puzzle } = generateDemoPuzzle(INITIAL_DEMO_DIFFICULTY)
       if (!cancelled) {
         setInitialGrid(cloneGrid(puzzle))
         setGrid(cloneGrid(puzzle))
-        setSource('generated')
         setRemainingSeconds(PUZZLE_DURATION_SECONDS)
         setTimerRunning(true)
       }
@@ -137,6 +114,31 @@ function App() {
     }
   }
 
+  const handleZkProof = async () => {
+    if (!grid || !initialGrid || timeUp || zkBusy) return
+    const result = validate4x4Grid(grid)
+    if (!result.complete) {
+      setZkError('Fill every cell before generating a proof.')
+      setZkMessage(null)
+      return
+    }
+    setZkBusy(true)
+    setZkError(null)
+    setZkMessage(null)
+    try {
+      const { publicInputs, proofByteLength, locallyVerified } = await proveSudokuInBrowser(initialGrid, grid)
+      setZkMessage(
+        `Proof generated (${proofByteLength} bytes). Local verifier: ${locallyVerified ? 'accepted' : 'rejected'}. ` +
+          `Public inputs: ${publicInputs.length} field(s).`,
+      )
+    } catch (e) {
+      console.error('ZK proof failed', e)
+      setZkError(e instanceof Error ? e.message : 'Proof generation failed.')
+    } finally {
+      setZkBusy(false)
+    }
+  }
+
   const handleReset = () => {
     if (!initialGrid) return
     setGrid(cloneGrid(initialGrid))
@@ -146,43 +148,12 @@ function App() {
   }
 
   const handleLoadGenerated = () => {
-    const { puzzle } = generate4x4Puzzle()
+    const { puzzle } = generateDemoPuzzle(generatorDifficulty)
     setInitialGrid(cloneGrid(puzzle))
     setGrid(cloneGrid(puzzle))
-    setSource('generated')
     setStatus('playing')
-    setError(null)
     setRemainingSeconds(PUZZLE_DURATION_SECONDS)
     setTimerRunning(true)
-  }
-
-  const handleLoadFromApi = async () => {
-    const url = apiUrlInput.trim()
-    if (!url) return
-    try {
-      setLoading(true)
-      setError(null)
-      setStatus('playing')
-      const res = await fetch(url)
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-      const json = await res.json()
-      const normalized = normalizeGridFromJson(json)
-      if (!normalized) {
-        throw new Error('Could not normalize puzzle JSON into a 9×9 grid')
-      }
-      setInitialGrid(cloneGrid(normalized))
-      setGrid(cloneGrid(normalized))
-      setSource('api')
-      setRemainingSeconds(PUZZLE_DURATION_SECONDS)
-      setTimerRunning(true)
-    } catch (e) {
-      console.error('Failed to load puzzle from API.', e)
-      setError('Failed to load puzzle from API. Check the URL and JSON shape.')
-    } finally {
-      setLoading(false)
-    }
   }
 
   return (
@@ -194,7 +165,7 @@ function App() {
 
       {!isReady ? (
         <div className="app-loading">
-          {loading ? 'Preparing your puzzle…' : error ?? 'Unable to prepare puzzle.'}
+          {loading ? 'Preparing your puzzle…' : 'Unable to prepare puzzle.'}
         </div>
       ) : (
         <main className="app-main">
@@ -205,33 +176,42 @@ function App() {
             </div>
 
             <div className="sudoku-controls">
+              <div className="sudoku-controls-row sudoku-difficulty-row">
+                <label className="sudoku-difficulty">
+                  <span className="sudoku-difficulty-label">Generated difficulty</span>
+                  <select
+                    className="sudoku-difficulty-select"
+                    value={generatorDifficulty}
+                    onChange={(e) => setGeneratorDifficulty(e.target.value as DemoDifficulty)}
+                    aria-label="Difficulty for locally generated puzzles"
+                  >
+                    <option value="easy">Easy (demo)</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </label>
+                <span
+                  className="sudoku-difficulty-hint"
+                  title="Easy removes only 10 cells from a full grid (71 clues) for quick demos."
+                >
+                  Easy = only 10 blanks
+                </span>
+              </div>
               <div className="sudoku-controls-row">
                 <button type="button" onClick={handleLoadGenerated} disabled={loading}>
                   New generated puzzle
                 </button>
-                  <span
-                  className="sudoku-controls-hint"
-                  title={
-                    'Expected JSON: either a 9×9 2D array like [[0,0,3,...], ...] where 0/null/"" = empty, ' +
-                    'or an object with a 9×9 array on one of { "puzzle", "grid", "board" }. ' +
-                    'Values 1–9 are treated as filled cells.'
-                  }
-                >
-                  or load from an API returning a 2D array / wrapped puzzle
-                </span>
+              </div>
+              {/*
+              Load puzzle from API (restore with normalizeGridFromJson + fetch handler):
+              <div className="sudoku-controls-row">
+                <span className="sudoku-controls-hint" title="...">or load from an API ...</span>
               </div>
               <div className="sudoku-controls-row">
-                <input
-                  type="text"
-                  placeholder="https://example.com/puzzle.json"
-                  value={apiUrlInput}
-                  onChange={(e) => setApiUrlInput(e.target.value)}
-                  className="sudoku-api-input"
-                />
-                <button type="button" onClick={handleLoadFromApi} disabled={loading || !apiUrlInput.trim()}>
-                  Load API puzzle
-                </button>
+                <input type="text" className="sudoku-api-input" ... />
+                <button type="button">Load API puzzle</button>
               </div>
+              */}
             </div>
 
             <div className="sudoku-grid">
@@ -264,6 +244,14 @@ function App() {
               <button type="button" onClick={handleCheck} disabled={!isReady || status === 'won' || timeUp}>
                 Check solution
               </button>
+              <button
+                type="button"
+                onClick={handleZkProof}
+                disabled={!isReady || timeUp || zkBusy}
+                title="Runs Noir + Barretenberg in the browser (first run may take a while)"
+              >
+                {zkBusy ? 'Generating ZK proof…' : 'Generate ZK proof'}
+              </button>
               <button type="button" onClick={handleReset}>
                 Reset puzzle
               </button>
@@ -278,7 +266,9 @@ function App() {
                     : 'Time is up. Reset or load a new puzzle to try again.'}
                 </span>
               )}
-              {status === 'won' && <span className="status-won">Perfect! This grid would pass zk verification.</span>}
+              {status === 'won' && <span className="status-won">Perfect! You can generate a ZK proof to verify in Noir.</span>}
+              {zkMessage && <div className="sudoku-zk-msg">{zkMessage}</div>}
+              {zkError && <div className="sudoku-zk-err">{zkError}</div>}
               {remainingSeconds !== null && (
                 <div className="sudoku-timer">
                   Time left: {formatSeconds(remainingSeconds)}
@@ -288,13 +278,9 @@ function App() {
                   {remainingSeconds === 0 && <span className="sudoku-timer-expired"> – expired</span>}
                 </div>
               )}
-              {source && (
-                <div className="sudoku-source">
-                  Puzzle source:{' '}
-                  <strong>{source === 'api' ? 'external API (normalized 4×4 grid)' : 'local generator'}</strong>
-                  {error && <span className="sudoku-source-error"> – {error}</span>}
-                </div>
-              )}
+              <div className="sudoku-source">
+                Puzzle source: <strong>local generator</strong>
+              </div>
             </div>
           </section>
         </main>

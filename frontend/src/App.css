@@ -74,6 +74,39 @@ image.png.app-root {
   color: #9ca3af;
 }
 
+.sudoku-difficulty-row {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.sudoku-difficulty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sudoku-difficulty-label {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.sudoku-difficulty-select {
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(15, 23, 42, 0.85);
+  color: #e5e7eb;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.sudoku-difficulty-hint {
+  font-size: 0.78rem;
+  color: #6b7280;
+  max-width: 14rem;
+  line-height: 1.25;
+}
+
 .sudoku-api-input {
   flex: 1 1 220px;
   min-width: 0;
@@ -193,6 +226,18 @@ image.png.app-root {
 
 .status-won {
   color: #4ade80;
+}
+
+.sudoku-zk-msg {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #93c5fd;
+}
+
+.sudoku-zk-err {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #f97373;
 }
 
 .sudoku-timer {
